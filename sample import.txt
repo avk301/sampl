@@ -1,0 +1,117 @@
+# Starter pipeline
+# Start with a minimal pipeline that you can customize to build and deploy your code.
+# Add steps that build, run tests, deploy, and more:
+# https://aka.ms/yaml
+
+trigger:
+  - master
+  - Develop/*
+  - Release/*
+
+pool:
+  name: pool-name
+  timeoutInMinutes: 0
+##name: 'azdo-win-main-pool'
+
+variables:
+  solution: '**/selfservice.sln'
+  buildPlatform: 'AnyCPU'
+  buildConfiguration: 'Release' 
+  #enableCheckmarxScan: false
+  enableVulnerabilityThreshold: true
+  highVulnerabilityThreshold: 0
+  mediumVulnerabilityThreshold: 2   # Since the dynamic vulnerability threshold variable template is being used, these values are being ignored in favor of the variable template.
+  lowVulnerabilityThreshold: 11
+    
+stages: 
+  - stage: build
+    jobs:
+      - job: scan
+        timeoutInMinutes: 0
+        steps:
+          - task: Application security testing@2024  
+            condition: and(eq(variables['enableCheckmarxScan'], 'true'), eq(variables['Build.SourceBranch'], 'refs/heads/master'))          
+            inputs:
+              projectName: 'CPAI-AR3144-SelfService'
+              enableProxy: false
+              enableSastScan: true
+              syncMode: true
+              CheckmarxService: 'NA_Affinity_Trust_CheckMarx'
+              fullTeamName: 'CxServer\Affinity'
+              incScan: false
+              forceScan: true
+              projectcustomfields: 'true'
+              customfields: 'AppID: AR3144, Is_Prod_Pipeline: Y'
+              generatePDFReport: false
+              enableDependencyScan: false
+              enableSastBranching: false
+              vulnerabilityThreshold: eq('${{variables.enableVulnerabilityThreshold}}', true)
+            #  critical: '0'
+              high: '$(highVulnerabilityThreshold)'
+              medium: '$(mediumVulnerabilityThreshold)'
+              low: '$(lowVulnerabilityThreshold)'
+                  
+      - job: build
+        dependsOn: scan
+        condition: succeeded()
+        steps:
+         - task: NuGetToolInstaller@1
+
+         - task: NuGetCommand@2
+           inputs:
+             command: 'restore'
+             restoreSolution: '$(solution)'
+             feedsToUse: 'config'
+             nugetConfigPath: '.nuget/nuget.config'
+          
+         - task: MSBuild@1
+           inputs:
+             solution: 'selfservice/selfservice.WebAPIs.csproj'
+             msbuildArguments: '/p:DeployOnBuild=true /p:WebPublishMethod=FileSystem /p:DeployDefaultTarget=WebPublish /p:publishUrl="$(Agent.TempDirectory)\selfservice.webAPIs\\"'
+             platform: '$(buildPlatform)'
+             configuration: '$(buildConfiguration)'
+         
+         - powershell: | 
+            Remove-Item -Path "$(Agent.TempDirectory)\selfservice.webAPIs\Web.*.config" -force -ErrorAction SilentlyContinue
+            Remove-Item -Path "$(Agent.TempDirectory)\selfservice.webAPIs\bin\*.pdb" -force -ErrorAction SilentlyContinue
+         - task: ArchiveFiles@2
+           displayName: selfservice.webAPIs
+           inputs:
+             rootFolderOrFile: '$(Agent.TempDirectory)\selfservice.webAPIs'
+             includeRootFolder: false
+             archiveType: 'zip'
+             archiveFile: '$(Build.ArtifactStagingDirectory)/selfservice.webAPIs.zip'
+             replaceExistingArchive: true
+         
+         - task: PublishPipelineArtifact@1
+           displayName: selfservice.webAPIs Publish
+           inputs:
+             targetPath: '$(Build.ArtifactStagingDirectory)/selfservice.webAPIs.zip'
+             artifactName: 'selfservice.webAPIs'
+             artifactType: 'pipeline'
+			 
+         - task: MSBuild@1
+           inputs:
+             solution: 'selfservice/selfservice.webui.csproj'
+             msbuildArguments: '/p:DeployOnBuild=true /p:WebPublishMethod=FileSystem /p:DeployDefaultTarget=WebPublish /p:publishUrl="$(Agent.TempDirectory)\selfservice.webui\\"'
+             platform: '$(buildPlatform)'
+             configuration: '$(buildConfiguration)'
+         
+         - powershell: | 
+            Remove-Item -Path "$(Agent.TempDirectory)\selfservice.webui\Web.*.config" -force -ErrorAction SilentlyContinue
+            Remove-Item -Path "$(Agent.TempDirectory)\selfservice.webui\bin\*.pdb" -force -ErrorAction SilentlyContinue
+         - task: ArchiveFiles@2
+           displayName: selfservice.webui
+           inputs:
+             rootFolderOrFile: '$(Agent.TempDirectory)\selfservice.webui'
+             includeRootFolder: false
+             archiveType: 'zip'
+             archiveFile: '$(Build.ArtifactStagingDirectory)/selfservice.webui.zip'
+             replaceExistingArchive: true
+         
+         - task: PublishPipelineArtifact@1
+           displayName: selfservice.webui Publish
+           inputs:
+             targetPath: '$(Build.ArtifactStagingDirectory)/selfservice.webui.zip'
+             artifactName: 'selfservice.webui'
+             artifactType: 'pipeline'
