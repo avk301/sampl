@@ -1,0 +1,73 @@
+- task: Application security-testing@1
+  displayname: 'checkmarx Application security testing'
+---
+# Checkmarx SAST Pull Request Validation Pipeline
+
+parameters:
+  - name: enableFullSastScan
+    displayName: Enable full SAST scan
+    type: boolean
+    default: false
+
+resources:
+  repositories:
+  - repository: 'CxPrValidation'
+    type: git
+    name: 'DevOps Community of Practice/Checkmarx.PR.Validation'
+    ref: 'refs/tags/release-0.6'
+
+extends:
+  template: Templates/PR.Validation-Checkmarx.yml@CxPrValidation
+  parameters:
+    enableSparseCheckout: true                    # Enables sparse checkout of the branch
+    enableCheckmarx: true                          # Enables SAST job
+    enableAutoAppendBranchName: true               # Enables auto-appending the target branch name to the Checkmarx project name
+    enableFolderExclusion: true                   # Enables "Folder exclusions"
+    enableFileExtension: true                     # Enables "Include/Exclude Wildcard Patterns"
+    enableVulnerabilityThreshold: true            # Enables "CxSAST thresholds enabled"
+    enableProjectCustomFields: true               # Enables "Project Level Custom Fields"
+    enableDependencyScan: false                    # Enables dependency scanning
+    overrideProjectSettings: true                  # Updates project settings like Preset and EngineConfigurationID in the SAST project. These settings are always saved for new SAST projects.
+    ${{ if eq(parameters.enableFullSastScan, true) }}:
+      enableFullSastScan: true                     # Enables "Force scan"
+    timeoutInMinutes: 120                           # Sets timeout limit for SAST job
+    dynamicVulnerabilityThresholdVariableTemplate:  Examples/Cx.PR.Validation-Example.Dynamic.Vulnerability.Threshold.Variable.Template.yml@self # Sets the dynamic vulnerability threshold variable template location
+
+trigger: none
+
+variables:
+
+# Sparse Checkout Variables
+# Parameter Dependency: "enableSparseCheckout: true"
+  targetBranch: Cipoc-Selfservice.web-checkmarx-test
+  checkoutFolders: AON.SS.WebAPIs
+
+# Team and Project related variables
+# Parameter Dependency: "enableCheckmarx: true"
+  checkmarxProjectName: cpai.selfservice.web
+  checkmarxService: checkmarxs_sast
+  sastScanPreset: Checkmarx Default
+  fullTeamName:
+
+# Folder exclusions and file extension wildcards
+# Parameter Dependency: "enableFolderExclusion: true" & "enableFileExtension: true"
+# folderExclusion: 'PEO.ApiService/Middleware, .git'
+  fileExtension: '!**/*.DS_Store, !**/*.ipr, !**/*.iws, !**/*.bak, !**/*.tmp, !**/*.aac, !**/*.aif, !**/*.iff, !**/*.m3u, !**/*.mid, !**/*.mp3, !**/*.mpa, !**/*.ra, !**/*.wav, !**/*.wma, !**/*.3g2, !**/*.3gp, !**/*.asf, !**/*.asx, !**/*.avi, !**/*.flv, !**/*.mov, !**/*.mp4, !**/*.mpg,  !**/*.rm, !**/*.swf, !**/*.vob, !**/*.wmv, !**/*.bmp, !**/*.gif, !**/*.jpg, !**/*.png, !**/*.psd, !**/*.tif, !**/*.swf, !**/*.jar, !**/*.zip, !**/*.rar, !**/*.exe, !**/*.dll, !**/*.pdb, !**/*.7z, !**/*.gz, !**/*.tar.gz, !**/*.tar, !**/*.gz, !**/*.ahtm, !**/*.ahtml, !**/*.fhtml, !**/*.hdm, !**/*.hdml, !**/*.hsql, !**/*.ht, !**/*.hta, !**/*.htc, !**/*.htd, !**/*.war, !**/*.ear, !**/*.htmls, !**/*.ihtml, !**/*.mht, !**/*.mhtm, !**/*.mhtml, !**/*.ssi, !**/*.stm, !**/*.stml, !**/*.ttml, !**/*.txn, !**/*.xhtm, !**/*.xhtml, !**/*.class, !**/*.iml, !**/autoscaler-manifest.yml, !**/PEO.ApiService.sln, !**/Web.Dev.config, !**/Web.Prod.config, !**/Web.QA.config, !**/web.UAT.config'
+
+# Amount of incremental scans between full scans
+# Parameter Dependency: "enableFullSastScan: false"
+  fullScanCycle: 5
+
+# Vulnerability threshold to fail the SAST job
+# Parameter Dependency: "enableVulnerabilityThreshold: true"
+  highVulnerabilityThreshold: 0
+  mediumVulnerabilityThreshold: 2
+  lowVulnerabilityThreshold: 11 ---- master 10 (scan passed) --- delta code (4)passed
+
+# Project level custom fields
+# Parameter Dependency: enableProjectCustomFields
+  AppID: AR3144
+  Is_Prod_Pipeline: N
+  
+condition: and(eq('${{variables.enableCheckmarxScan}}', true), eq(variables['Build.SourceBranch'], 'refs/heads/master'))
+condition: and(eq(variables['enableCheckmarxScan'], 'true'), eq(variables['Build.SourceBranch'], 'refs/heads/master'))

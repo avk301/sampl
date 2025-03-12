@@ -1,0 +1,73 @@
+parameters:
+- name: enableFullSastScan
+  displayName: Enable full SAST scan
+  type: boolean
+  default: true
+trigger: none
+  #enabled: false
+pr:
+  branches:
+    include:
+	- Cipoc-csrforms-dev-test
+  paths:
+    include:
+	- '**/*.cs'
+variables:
+- name: checkmarxService
+  value: NA_Affinity_Trust_CheckMarx
+- name: sastScanPreset
+  value: ASA-Premium
+- name: checkmarxProjectName
+  value: CPAI-AR3136-CSRForms
+- name: fullTeamName
+  value: 'CxServer\Affinity'
+- name: targetBranch
+  value: ''
+- name: checkoutFolders
+  value: ''
+- name: folderExclusion
+  value: ''
+- name: fileExtension
+  value: ''
+- name: fullScanCycle
+  value: 5
+- name: AppID
+  value: AR3136
+- name: Is_Prod_Pipeline
+  value: Y
+- name: highVulnerabilityThreshold
+  value: 0
+- name: mediumVulnerabilityThreshold
+  value: 2
+- name: lowVulnerabilityThreshold
+  value: 11
+stages:
+- stage: ''
+  displayName: Checkmarx PR Validation
+  jobs:
+  - job: SAST
+    condition: eq('True', 'true')
+    timeoutInMinutes: 0
+    variables: []
+    steps:
+    - task: Application security testing@2024
+      displayName: Checkmarx SAST Scan
+      condition: eq(variables['enableCheckmarxScan'], 'true')
+      inputs:
+        projectName: $(checkmarxProjectName)
+        enableProxy: false
+        enableSastScan: true
+        CheckmarxService: "$(checkmarxService)"
+        fullTeamName: "$(fullTeamName)"
+        overrideProjectSettings: True
+        incScan: false
+        forceScan: true
+        folderExclusion: "$(FolderExclusion)"
+        fileExtension: $(fileExtension)
+        vulnerabilityThreshold: true
+        high: "$(highVulnerabilityThreshold)"
+        medium: "$(mediumVulnerabilityThreshold)"
+        low: "$(lowVulnerabilityThreshold)"
+        projectcustomfields: 'AppID:$(AppID),Is_Prod_Pipeline:$(Is_Prod_Pipeline)'
+        enableDependencyScan: False
+        preset: "$(sastScanPreset)"

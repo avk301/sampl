@@ -1,0 +1,120 @@
+# Starter pipeline
+# Start with a minimal pipeline that you can customize to build and deploy your code.
+# Add steps that build, run tests, deploy, and more:
+# https://aka.ms/yaml
+
+trigger:
+  - master
+  - Cipoc-Selfservice.web-checkmarx-test
+
+pool:
+  name: azdo-win-main-pool
+  timeoutInMinutes: 0
+##name: 'azdo-win-main-pool'
+
+variables:
+  solution: '**/AON.SS.sln'
+  buildPlatform: 'AnyCPU'
+  buildConfiguration: 'Release' 
+  #enableCheckmarxScan: false
+  enableVulnerabilityThreshold: false #(when ever scan required need to change to true)
+  highVulnerabilityThreshold: 0
+  mediumVulnerabilityThreshold: 2   # Since the dynamic vulnerability threshold variable template is being used, these values are being ignored in favor of the variable template.
+  lowVulnerabilityThreshold: 11
+    
+stages: 
+  - stage: build
+    jobs:
+      - job: scan
+        timeoutInMinutes: 0
+        steps:
+          - task: Application security testing@2024  
+            condition: eq(variables['enableCheckmarxScan'], 'true')          
+            inputs:
+              projectName: 'CPAI-AR3144-SelfService'
+              enableProxy: false
+              enableSastScan: true
+              syncMode: true
+              CheckmarxService: 'NA_Affinity_Trust_CheckMarx'
+              fullTeamName: 'CxServer\Affinity'
+              incScan: false
+              forceScan: true
+              projectcustomfields: 'true'
+              customfields: 'AppID: AR3144, Is_Prod_Pipeline: Y'
+              generatePDFReport: false
+              enableDependencyScan: false
+              enableSastBranching: false
+              vulnerabilityThreshold: '$(enableVulnerabilityThreshold)' #-- use this
+              vulnerabilityThreshold: eq('${{variables.enableVulnerabilityThreshold}}', true) #-- already existed in pipeline
+            #  critical: '0'
+              high: '$(highVulnerabilityThreshold)'
+              medium: '$(mediumVulnerabilityThreshold)'
+              low: '$(lowVulnerabilityThreshold)'
+                  
+      - job: build
+        dependsOn: scan
+        condition: succeeded()
+        steps:
+         - task: NuGetToolInstaller@1
+         
+         - task: NuGetCommand@2
+           inputs:
+             command: 'restore'
+             restoreSolution: '$(solution)'
+             feedsToUse: 'config'
+             nugetConfigPath: '.nuget/nuget.config'
+             
+         
+         - task: MSBuild@1
+           inputs:
+             solution: 'quickpay.web/quickpay.web.csproj'
+             msbuildArguments: '/p:DeployOnBuild=true /p:WebPublishMethod=FileSystem /p:DeployDefaultTarget=WebPublish /p:publishUrl="$(Agent.TempDirectory)\quickpay.web\\"'
+             platform: '$(buildPlatform)'
+             configuration: '$(buildConfiguration)'
+         
+         - powershell: | 
+            Remove-Item -Path "$(Agent.TempDirectory)\quickpay.web\Web.*.config" -force -ErrorAction SilentlyContinue
+            Remove-Item -Path "$(Agent.TempDirectory)\EmailQuoteServices\bin\*.pdb" -force -ErrorAction SilentlyContinue
+         - task: ArchiveFiles@2
+           displayName: quickpay.web
+           inputs:
+             rootFolderOrFile: '$(Agent.TempDirectory)\quickpay.web'
+             includeRootFolder: false
+             archiveType: 'zip'
+             archiveFile: '$(Build.ArtifactStagingDirectory)/quickpay.web.zip'
+             replaceExistingArchive: true
+         
+         - task: PublishPipelineArtifact@1
+           displayName: selfservice.webAPIs Publish
+           inputs:
+             targetPath: '$(Build.ArtifactStagingDirectory)/quickpay.web.zip'
+             artifactName: 'quickpay.web'
+             artifactType: 'pipeline'
+
+  - stage: DeployTODev
+    dependsOn: Build
+    condition: succeeded()
+    jobs:
+      - deployment: Deploy
+        environment: DEV
+        displayName: Deploy To Dev
+        pool:
+          name: azdo-win-main-pool
+          variables:
+            group: trust-sit
+            WebsiteName: 'Default Web Site'
+          strategy:
+            runonce:
+            deploy:
+              steps:
+              - task: IISWebAppDeploymentOnMachineGroup@0
+                displayName: 'IIS Web App Deploy'
+                inputs:
+                  WebSiteName: '$(Parameters.WebsiteName)'
+                  Package: '$(System.DefaultWorkingDirectory)/_cpai.selfservice.web (17820)/selfservice.web-ui/AON.SS.zip'
+                  TakeAppOfflineFlag: 'true'
+                  XmlTransformation: 'true'
+                  XmlVariableSubstitution: 'true'
+                  RemoveAdditionlaFilesFlag: 'true'
+                  PublishProfile: ''
+                  
